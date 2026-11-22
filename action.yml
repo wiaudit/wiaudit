@@ -1,0 +1,78 @@
+name: "wiaudit - Workload Identity Auditor"
+description: "Find risky GitHub Actions -> Azure OIDC trust and broken federated credentials. Read-only."
+branding:
+  icon: shield
+  color: blue
+inputs:
+  path:
+    description: "Repository checkout to scan"
+    default: "."
+  azure-snapshot:
+    description: "Path to an azure-snapshot.json (from `wiaudit collect azure`). Optional."
+    default: ""
+  collect-azure:
+    description: "Run `wiaudit collect azure` here (needs a prior azure/login with read access to Graph + RBAC)."
+    default: "false"
+  format:
+    description: "sarif | json | html | text"
+    default: "sarif"
+  output:
+    description: "Report file"
+    default: "wiaudit.sarif"
+  fail-on:
+    description: "Fail the job at this severity or above (critical|high|medium|low). Empty = never fail."
+    default: ""
+  upload-sarif:
+    description: "Upload SARIF to GitHub code scanning (needs security-events: write)"
+    default: "true"
+  version:
+    description: "wiaudit version spec for pip"
+    default: "wiaudit"
+outputs:
+  report:
+    description: "Path of the generated report"
+    value: ${{ steps.scan.outputs.report }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install wiaudit
+      shell: bash
+      run: python -m pip install --quiet "${{ inputs.version }}"
+    - name: Collect Azure snapshot
+      if: inputs.collect-azure == 'true'
+      shell: bash
+      run: wiaudit collect azure -o "$RUNNER_TEMP/azure-snapshot.json"
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        WIA_PATH: ${{ inputs.path }}
+        WIA_SNAPSHOT: ${{ inputs.azure-snapshot }}
+        WIA_COLLECT: ${{ inputs.collect-azure }}
+        WIA_FORMAT: ${{ inputs.format }}
+        WIA_OUTPUT: ${{ inputs.output }}
+        WIA_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        args=(scan --repo "$WIA_PATH" --repo-slug "$GITHUB_REPOSITORY" --format "$WIA_FORMAT" -o "$WIA_OUTPUT")
+        if [ "$WIA_COLLECT" = "true" ]; then args+=(--azure "$RUNNER_TEMP/azure-snapshot.json");
+        elif [ -n "$WIA_SNAPSHOT" ]; then args+=(--azure "$WIA_SNAPSHOT"); fi
+        if [ -n "$WIA_FAIL_ON" ]; then args+=(--fail-on "$WIA_FAIL_ON"); fi
+        echo "report=$WIA_OUTPUT" >> "$GITHUB_OUTPUT"
+        set +e; wiaudit "${args[@]}"; code=$?; set -e
+        echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+        exit 0
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true' && inputs.format == 'sarif'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output }}
+        category: wiaudit
+    - name: Enforce fail-on
+      if: steps.scan.outputs.exit_code == '2'
+      shell: bash
+      run: |
+        echo "::error::wiaudit found issues at or above '${{ inputs.fail-on }}'"
+        exit 1

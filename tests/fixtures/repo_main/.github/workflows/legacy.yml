@@ -1,0 +1,9 @@
+name: legacy
+on: [workflow_dispatch]
+jobs:
+  old:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}

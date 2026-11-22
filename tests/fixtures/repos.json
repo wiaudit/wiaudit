@@ -1,0 +1,5 @@
+[
+  {"fullName": "contoso/payments-api", "ownerId": 5544123, "repoId": 821093847, "createdAt": "2023-03-01T10:00:00Z", "usesImmutable": null, "exists": true, "renamedFrom": "contoso/old-api"},
+  {"fullName": "contoso/new-svc", "ownerId": 5544123, "repoId": 900001, "createdAt": "2026-08-01T09:00:00Z", "usesImmutable": null, "exists": true},
+  {"fullName": "contoso/legacy-tool", "exists": false}
+]

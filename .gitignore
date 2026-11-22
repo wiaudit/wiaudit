@@ -1,0 +1,8 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.sarif
+report.html
+azure-snapshot.json
+repos.json
+!tests/fixtures/*.json

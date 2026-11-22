@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "tenantId": "00000000-0000-0000-0000-000000000000",
+  "collectedAt": "2026-11-22T10:00:00Z",
+  "identities": [
+    {
+      "kind": "app",
+      "displayName": "gh-payments-deploy",
+      "clientId": "11111111-1111-1111-1111-111111111111",
+      "objectId": "aaaaaaaa-0000-0000-0000-000000000001",
+      "federatedCredentials": [
+        {"name": "prod", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:contoso/payments-api:environment:prod", "audiences": ["api://AzureADTokenExchange"]},
+        {"name": "pr", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:contoso/payments-api:pull_request", "audiences": ["api://AzureADTokenExchange"]},
+        {"name": "old-name", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:contoso/old-api:ref:refs/heads/main", "audiences": ["api://AzureADTokenExchange"]}
+      ],
+      "roleAssignments": [
+        {"role": "Owner", "scope": "/subscriptions/33333333-3333-3333-3333-333333333333"}
+      ]
+    },
+    {
+      "kind": "managedIdentity",
+      "displayName": "mi-new-svc",
+      "clientId": "22222222-2222-2222-2222-222222222222",
+      "objectId": "aaaaaaaa-0000-0000-0000-000000000002",
+      "resourceId": "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/rg-new/providers/Microsoft.ManagedIdentity/userAssignedIdentities/mi-new-svc",
+      "federatedCredentials": [
+        {"name": "main", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:contoso/new-svc:ref:refs/heads/main", "audiences": ["api://AzureADTokenExchange"]}
+      ],
+      "roleAssignments": [
+        {"role": "Contributor", "scope": "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/rg-new"}
+      ]
+    },
+    {
+      "kind": "app",
+      "displayName": "gh-legacy-tool",
+      "clientId": "44444444-4444-4444-4444-444444444444",
+      "objectId": "aaaaaaaa-0000-0000-0000-000000000004",
+      "federatedCredentials": [
+        {"name": "main", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:contoso/legacy-tool:ref:refs/heads/main", "audiences": ["api://AzureADTokenExchange"]}
+      ],
+      "roleAssignments": [
+        {"role": "Contributor", "scope": "/subscriptions/33333333-3333-3333-3333-333333333333"}
+      ]
+    },
+    {
+      "kind": "app",
+      "displayName": "gh-monorepo-all",
+      "clientId": "55555555-5555-5555-5555-555555555555",
+      "objectId": "aaaaaaaa-0000-0000-0000-000000000005",
+      "federatedCredentials": [
+        {"name": "any-branch", "issuer": "https://token.actions.githubusercontent.com", "subject": null, "audiences": ["api://AzureADTokenExchange"], "claimsMatchingExpression": "claims['sub'] matches 'repo:contoso/*:ref:refs/heads/*'"},
+        {"name": "custom-aud", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:contoso@5544123/infra@700001:environment:prod", "audiences": ["custom-audience"]},
+        {"name": "partner", "issuer": "https://oidc.partner-ci.example.net", "subject": "pipeline-42", "audiences": ["api://AzureADTokenExchange"]}
+      ],
+      "roleAssignments": []
+    }
+  ]
+}
