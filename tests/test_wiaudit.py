@@ -441,3 +441,9 @@ def test_regional_aks_and_eks_issuers_are_known():
     assert issuer_is_known("https://login.microsoftonline.com/t/v2.0")
     assert not issuer_is_known("https://oidc.partner-ci.example.net")
     assert not issuer_is_known("https://evil.com/.oic.prod-aks.azure.com")
+
+
+def test_allowed_owner_typo_is_reported():
+    fs = run_identity_rules(_snap_two_owners(), allowed_owners={"ORG1"})
+    hint = [f for f in fs if f.rule_id == "WIA011"]
+    assert len(hint) == 1 and "ORG1" in hint[0].message and "myorg (1)" in hint[0].message

@@ -263,6 +263,21 @@ def check_owners(
                     target=f"{identity.ref} / credential '{fic.name}'",
                     details={"owner": owner},
                 )
+    if allowed is not None:
+        seen = {o.lower() for o in counts}
+        unused = sorted(o for o in (allowed_owners or set()) if o.lower() not in seen)
+        if unused:
+            listing = ", ".join(f"{o} ({n})" for o, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower())))
+            yield Finding(
+                rule_id="WIA011",
+                severity=Severity.INFO,
+                title="Allowed GitHub owners not found in any credential",
+                message=f"--allowed-owners contains {', '.join(unused)}, which no federated credential uses "
+                f"(typo or placeholder?). Owners actually trusted: {listing}.",
+                remediation="Fix the names in --allowed-owners; WIA010 findings may be false positives until then.",
+                target="tenant",
+                details={"unused": unused, "owners": counts},
+            )
     if allowed is None and len(counts) > 1:
         listing = ", ".join(f"{o} ({n})" for o, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower())))
         yield Finding(
