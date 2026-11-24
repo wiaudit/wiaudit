@@ -65,13 +65,33 @@ def _log(msg: str) -> None:
 # --------------------------------------------------------------------- Azure
 
 
-def _graph_get_all(run: Runner, url: str) -> list[dict[str, Any]]:
+def _graph_get_all(run: Runner, url: str, advanced: bool = False) -> list[dict[str, Any]]:
+    """GET all pages. advanced=True adds ConsistencyLevel: eventual (Graph advanced queries)."""
     items: list[dict[str, Any]] = []
+    extra = ["--headers", "ConsistencyLevel=eventual"] if advanced else []
     while url:
-        page = run(["az", "rest", "--method", "GET", "--url", url, "-o", "json"]) or {}
+        page = run(["az", "rest", "--method", "GET", "--url", url, *extra, "-o", "json"]) or {}
         items.extend(page.get("value", []))
         url = page.get("@odata.nextLink")
     return items
+
+
+GRAPH = "https://graph.microsoft.com/v1.0"
+
+
+def _list_apps(run: Runner, all_issuers: bool) -> list[dict[str, Any]]:
+    """Apps to inspect. By default only apps that trust the GitHub issuer, filtered server-side,
+    so large tenants (thousands of apps) take seconds instead of hours."""
+    select = "$select=id,appId,displayName&$top=999"
+    if not all_issuers:
+        flt = f"federatedIdentityCredentials/any(f:f/issuer eq '{GITHUB_ISSUER}')".replace(" ", "%20")
+        _log("[azure] app registrations trusting GitHub Actions (Microsoft Graph)")
+        try:
+            return _graph_get_all(run, f"{GRAPH}/applications?$filter={flt}&$count=true&{select}", advanced=True)
+        except CollectorError as exc:
+            _log(f"[azure] filtered query not available ({str(exc)[:120]}); falling back to listing all apps")
+    _log("[azure] all app registrations (Microsoft Graph) - this can take long in large tenants")
+    return _graph_get_all(run, f"{GRAPH}/applications?{select}")
 
 
 def collect_azure(
@@ -80,6 +100,7 @@ def collect_azure(
     app_name_prefix: str | None = None,
     include_apps: bool = True,
     include_managed_identities: bool = True,
+    all_issuers: bool = False,
     run: Runner = _default_runner,
 ) -> dict[str, Any]:
     account = run(["az", "account", "show", "-o", "json"]) or {}
@@ -118,11 +139,13 @@ def collect_azure(
                 )
 
     if include_apps:
-        _log("[azure] app registrations (Microsoft Graph)")
-        url = "https://graph.microsoft.com/v1.0/applications?$select=id,appId,displayName&$top=999"
-        for app in _graph_get_all(run, url):
-            if app_name_prefix and not (app.get("displayName") or "").startswith(app_name_prefix):
-                continue
+        apps = _list_apps(run, all_issuers)
+        if app_name_prefix:
+            apps = [a for a in apps if (a.get("displayName") or "").startswith(app_name_prefix)]
+        _log(f"[azure] {len(apps)} app registrations to inspect")
+        for i, app in enumerate(apps, 1):
+            if i % 25 == 0 or i == len(apps):
+                _log(f"[azure]   {i}/{len(apps)}")
             try:  # beta exposes claimsMatchingExpression (flexible credentials)
                 fics = _graph_get_all(
                     run, f"https://graph.microsoft.com/beta/applications/{app['id']}/federatedIdentityCredentials"

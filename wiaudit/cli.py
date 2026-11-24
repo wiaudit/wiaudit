@@ -130,11 +130,15 @@ def cmd_collect_azure(args: argparse.Namespace) -> int:
             all_subscriptions=args.all_subscriptions,
             app_name_prefix=args.app_prefix,
             include_apps=not args.no_apps,
+            all_issuers=args.all_issuers,
             include_managed_identities=not args.no_managed_identities,
         )
     except CollectorError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
     save_json(data, args.output)
     print(f"{len(data['identities'])} identities with federated credentials written to {args.output}", file=sys.stderr)
     return 0
@@ -155,6 +159,9 @@ def cmd_collect_github(args: argparse.Namespace) -> int:
     except CollectorError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
     save_json(data, args.output)
     gone = sum(1 for r in data if r.get("exists") is False)
     print(f"{len(data)} repos written to {args.output} ({gone} not found)", file=sys.stderr)
@@ -200,6 +207,11 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("--all-subscriptions", action="store_true")
     ca.add_argument("--app-prefix", help="only app registrations whose name starts with this")
     ca.add_argument("--no-apps", action="store_true")
+    ca.add_argument(
+        "--all-issuers",
+        action="store_true",
+        help="inspect every app registration, not only those trusting GitHub (slow in large tenants; enables WIA009)",
+    )
     ca.add_argument("--no-managed-identities", action="store_true")
     ca.add_argument("--output", "-o", default="azure-snapshot.json")
     ca.set_defaults(func=cmd_collect_azure)
@@ -228,6 +240,9 @@ def main(argv: list[str] | None = None) -> int:
     except CollectorError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

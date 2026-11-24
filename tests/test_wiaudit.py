@@ -291,3 +291,39 @@ def test_cli_missing_paths_give_clear_errors(tmp_path, capsys):
     assert "not found" in err and "wiaudit collect azure" in err
     assert main(["scan", "--repo", str(tmp_path)]) == 0
     assert "no .github/workflows" in capsys.readouterr().out
+
+
+def test_collect_azure_filters_apps_server_side():
+    calls = []
+
+    def run(args):
+        calls.append(args)
+        if args[:3] == ["az", "account", "show"]:
+            return {"tenantId": "t", "id": "sub1"}
+        if args[:2] == ["az", "rest"]:
+            url = args[args.index("--url") + 1]
+            if "/applications?" in url:
+                return {"value": []}
+        return []
+
+    collect_azure(include_managed_identities=False, run=run)
+    app_call = next(a for a in calls if a[:2] == ["az", "rest"])
+    url = app_call[app_call.index("--url") + 1]
+    assert "federatedIdentityCredentials/any" in url and "$count=true" in url and " " not in url
+    assert "ConsistencyLevel=eventual" in app_call
+
+
+def test_collect_azure_falls_back_when_filter_unsupported():
+    urls = []
+
+    def run(args):
+        if args[:3] == ["az", "account", "show"]:
+            return {"tenantId": "t", "id": "sub1"}
+        url = args[args.index("--url") + 1]
+        urls.append(url)
+        if "$filter" in url:
+            raise CollectorError("Unsupported query")
+        return {"value": []}
+
+    collect_azure(include_managed_identities=False, run=run)
+    assert "$filter" in urls[0] and "$filter" not in urls[1]
