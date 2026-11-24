@@ -431,3 +431,13 @@ def test_html_groups_low_findings_and_has_rule_table(snapshot, inventory):
     assert "<table class='rules'>" in html and "<details class='grp'>" in html
     text = render("text", run_identity_rules(snapshot, inventory), {"version": "t"})
     assert "by rule: " in text
+
+
+def test_regional_aks_and_eks_issuers_are_known():
+    from wiaudit.rules.identity_rules import issuer_is_known
+
+    assert issuer_is_known("https://westeurope.oic.prod-aks.azure.com/00000000-0000-0000-0000-000000000000/abc/")
+    assert issuer_is_known("https://oidc.eks.eu-west-1.amazonaws.com/id/ABC")
+    assert issuer_is_known("https://login.microsoftonline.com/t/v2.0")
+    assert not issuer_is_known("https://oidc.partner-ci.example.net")
+    assert not issuer_is_known("https://evil.com/.oic.prod-aks.azure.com")

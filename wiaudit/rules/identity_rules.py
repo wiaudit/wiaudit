@@ -28,9 +28,21 @@ KNOWN_ISSUER_PREFIXES = (
     "https://vstoken.dev.azure.com",
     "https://login.microsoftonline.com",
     "https://sts.windows.net",
-    "https://oidc.prod-aks.azure.com",  # AKS workload identity
     "https://accounts.google.com",
+    "https://container.googleapis.com",
 )
+# host suffixes of issuers that are regional / per-cluster
+KNOWN_ISSUER_HOST_SUFFIXES = (
+    ".oic.prod-aks.azure.com",  # AKS workload identity: https://<region>.oic.prod-aks.azure.com/<tenant>/<id>/
+    ".amazonaws.com",  # EKS: https://oidc.eks.<region>.amazonaws.com/id/<id>
+)
+
+
+def issuer_is_known(issuer: str) -> bool:
+    if any(issuer.startswith(p) for p in KNOWN_ISSUER_PREFIXES):
+        return True
+    host = issuer.split("://", 1)[-1].split("/", 1)[0].lower()
+    return any(host.endswith(sfx) for sfx in KNOWN_ISSUER_HOST_SUFFIXES)
 
 
 def _privilege_bump(identity: Identity, base: Severity) -> Severity:
@@ -96,7 +108,7 @@ def check_identity(
         loc = f"{target} / credential '{fic.name}'"
 
         if not fic.is_github:
-            if not any(fic.issuer.startswith(p) for p in KNOWN_ISSUER_PREFIXES):
+            if not issuer_is_known(fic.issuer):
                 yield Finding(
                     rule_id="WIA009",
                     severity=Severity.LOW,
