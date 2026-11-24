@@ -216,7 +216,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except FileNotFoundError as exc:
+        name = exc.filename or str(exc)
+        msg = f"error: file or folder not found: {name}"
+        if getattr(args, "azure", None) and str(name).endswith(str(args.azure)):
+            msg += "\nhint: create it first with `wiaudit collect azure -o " + str(args.azure) + "`"
+        print(msg, file=sys.stderr)
+        return 1
+    except CollectorError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

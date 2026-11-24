@@ -138,7 +138,10 @@ def load_workflows(repo_root: str | Path) -> tuple[list[Workflow], list[str]]:
     root = Path(repo_root)
     wf_dir = root / ".github" / "workflows"
     workflows, errors = [], []
+    if not root.is_dir():
+        raise FileNotFoundError(2, "repository folder not found", str(root))
     if not wf_dir.is_dir():
+        errors.append(f"{root}: no .github/workflows folder, nothing to check in this repo")
         return workflows, errors
     for path in sorted(list(wf_dir.glob("*.yml")) + list(wf_dir.glob("*.yaml"))):
         rel = path.relative_to(root).as_posix()

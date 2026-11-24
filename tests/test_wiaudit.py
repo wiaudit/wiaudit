@@ -254,3 +254,40 @@ def test_mcp_tools_and_server():
     assert any(r["id"] == "WIA201" for r in tool_rules())
     pytest.importorskip("mcp")
     assert build_server() is not None
+
+
+def test_windows_az_cmd_bypasses_cmd_exe(monkeypatch, tmp_path):
+    import wiaudit.collectors as c
+
+    cli = tmp_path / "CLI2"
+    (cli / "wbin").mkdir(parents=True)
+    (cli / "python.exe").write_text("")
+    az = cli / "wbin" / "az.cmd"
+    az.write_text("")
+    monkeypatch.setattr(c.os, "name", "nt")
+    monkeypatch.setattr(c.shutil, "which", lambda name: str(az))
+    url = "https://graph.microsoft.com/v1.0/applications?$select=id&$top=999"
+    argv = c._resolve_command(["az", "rest", "--method", "GET", "--url", url])
+    assert argv[:3] == [str(cli / "python.exe"), "-IBm", "azure.cli"]
+    assert argv[-1] == url
+
+
+def test_windows_other_batch_with_ampersand_is_refused(monkeypatch, tmp_path):
+    import wiaudit.collectors as c
+
+    tool = tmp_path / "tool.cmd"
+    tool.write_text("")
+    monkeypatch.setattr(c.os, "name", "nt")
+    monkeypatch.setattr(c.shutil, "which", lambda name: str(tool))
+    with pytest.raises(c.CollectorError):
+        c._resolve_command(["tool", "a&b"])
+
+
+def test_cli_missing_paths_give_clear_errors(tmp_path, capsys):
+    assert main(["scan", "--repo", str(tmp_path / "nope")]) == 1
+    assert "not found" in capsys.readouterr().err
+    assert main(["scan", "--azure", str(tmp_path / "azure-snapshot.json")]) == 1
+    err = capsys.readouterr().err
+    assert "not found" in err and "wiaudit collect azure" in err
+    assert main(["scan", "--repo", str(tmp_path)]) == 0
+    assert "no .github/workflows" in capsys.readouterr().out

@@ -7,6 +7,7 @@ The user's own login is used; credentials never pass through wiaudit.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -23,11 +24,34 @@ class CollectorError(RuntimeError):
     pass
 
 
-def _default_runner(args: list[str]) -> Any:
+def _resolve_command(args: list[str]) -> list[str]:
+    """Return the argv to execute.
+
+    On Windows `az` is a batch file (az.cmd). Running it sends every argument through
+    cmd.exe, which treats `&` in Graph URLs (`?$select=...&$top=999`) as a command
+    separator. So we call the Python that ships with Azure CLI directly, exactly as
+    az.cmd itself does (`python.exe -IBm azure.cli ...`), and no shell is involved.
+    """
     exe = shutil.which(args[0])
     if not exe:
         raise CollectorError(f"'{args[0]}' not found on PATH. Install it and log in first.")
-    proc = subprocess.run([exe, *args[1:]], capture_output=True, text=True, timeout=180)
+    if os.name == "nt" and exe.lower().endswith((".cmd", ".bat")):
+        if args[0] == "az":
+            cli_root = os.path.dirname(os.path.dirname(exe))  # ...\CLI2\wbin\az.cmd -> ...\CLI2
+            bundled = os.path.join(cli_root, "python.exe")
+            if os.path.isfile(bundled):
+                return [bundled, "-IBm", "azure.cli", *args[1:]]
+        if any(ch in a for a in args[1:] for ch in "&|<>^%"):
+            raise CollectorError(
+                f"{exe} is a batch file and an argument contains characters cmd.exe would misread. "
+                "Please report this at https://github.com/wiaudit/wiaudit/issues"
+            )
+    return [exe, *args[1:]]
+
+
+def _default_runner(args: list[str]) -> Any:
+    argv = _resolve_command(args)
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=180)
     if proc.returncode != 0:
         raise CollectorError(f"{' '.join(args[:4])}... failed: {proc.stderr.strip()[:500]}")
     out = proc.stdout.strip()
