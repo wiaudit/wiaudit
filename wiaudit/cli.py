@@ -141,6 +141,8 @@ def cmd_collect_azure(args: argparse.Namespace) -> int:
         return 130
     save_json(data, args.output)
     print(f"{len(data['identities'])} identities with federated credentials written to {args.output}", file=sys.stderr)
+    if data.get("warnings"):
+        print(f"{len(data['warnings'])} warning(s): some data is missing (see 'warnings' in the file); rerun later to complete it", file=sys.stderr)
     return 0
 
 

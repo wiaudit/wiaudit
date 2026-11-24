@@ -184,7 +184,7 @@ def test_collect_azure_with_fake_runner():
             if "servicePrincipals" in url:
                 return {"id": "sp1"}
         if args[:3] == ["az", "role", "assignment"]:
-            return [{"roleDefinitionName": "Reader", "scope": "/subscriptions/sub1"}]
+            return [{"roleDefinitionName": "Reader", "scope": "/subscriptions/sub1", "principalId": "sp1"}, {"roleDefinitionName": "Owner", "scope": "/subscriptions/sub1", "principalId": "someone-else"}]
         raise AssertionError(f"unexpected call {key}")
 
     data = collect_azure(run=run)
@@ -327,3 +327,65 @@ def test_collect_azure_falls_back_when_filter_unsupported():
 
     collect_azure(include_managed_identities=False, run=run)
     assert "$filter" in urls[0] and "$filter" not in urls[1]
+
+
+def test_role_assignments_one_call_per_subscription_and_failures_are_warnings():
+    calls = []
+
+    def run(args):
+        calls.append(args)
+        if args[:3] == ["az", "account", "show"]:
+            return {"tenantId": "t", "id": "s1"}
+        if args[:3] == ["az", "account", "list"]:
+            return [{"id": "s1", "tenantId": "t"}, {"id": "s2", "tenantId": "t"}]
+        if args[:3] == ["az", "identity", "list"]:
+            sub = args[args.index("--subscription") + 1]
+            return [{"name": f"mi-{sub}", "resourceGroup": "rg", "clientId": f"c-{sub}", "principalId": f"p-{sub}", "id": "/x"}]
+        if args[:4] == ["az", "identity", "federated-credential", "list"]:
+            return [{"name": "f", "issuer": "https://token.actions.githubusercontent.com", "subject": "repo:o/r:ref:refs/heads/main"}]
+        if args[:3] == ["az", "role", "assignment"]:
+            sub = args[args.index("--subscription") + 1]
+            if sub == "s2":
+                raise CollectorError("Connection aborted")
+            return [{"roleDefinitionName": "Contributor", "scope": "/subscriptions/s1", "principalId": "p-s1"}]
+        return {"value": []}
+
+    data = collect_azure(all_subscriptions=True, include_apps=False, run=run)
+    role_calls = [a for a in calls if a[:3] == ["az", "role", "assignment"]]
+    assert len(role_calls) == 2 and all("--assignee-object-id" not in a for a in role_calls)
+    mi1 = next(i for i in data["identities"] if i["objectId"] == "p-s1")
+    assert mi1["roleAssignments"] == [{"role": "Contributor", "scope": "/subscriptions/s1"}]
+    assert len(data["warnings"]) == 1 and "s2" in data["warnings"][0]
+
+
+def test_default_runner_retries_transient_errors(monkeypatch):
+    import subprocess as sp
+    import wiaudit.collectors as c
+
+    attempts = []
+
+    def fake_run(argv, **kw):
+        attempts.append(argv)
+        if len(attempts) == 1:
+            return sp.CompletedProcess(argv, 1, "", "ConnectionResetError(10054)")
+        return sp.CompletedProcess(argv, 0, "[]", "")
+
+    monkeypatch.setattr(c, "_resolve_command", lambda a: a)
+    monkeypatch.setattr(c.subprocess, "run", fake_run)
+    monkeypatch.setattr(c.time, "sleep", lambda s: None)
+    assert c._default_runner(["az", "role", "assignment", "list"]) == []
+    assert len(attempts) == 2
+
+
+def test_default_runner_does_not_retry_real_errors(monkeypatch):
+    import subprocess as sp
+    import wiaudit.collectors as c
+
+    attempts = []
+    monkeypatch.setattr(c, "_resolve_command", lambda a: a)
+    monkeypatch.setattr(
+        c.subprocess, "run", lambda argv, **kw: attempts.append(1) or sp.CompletedProcess(argv, 1, "", "AuthorizationFailed")
+    )
+    with pytest.raises(c.CollectorError):
+        c._default_runner(["az", "role", "assignment", "list"])
+    assert len(attempts) == 1

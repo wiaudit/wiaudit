@@ -11,6 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -49,11 +50,36 @@ def _resolve_command(args: list[str]) -> list[str]:
     return [exe, *args[1:]]
 
 
+RETRIES = 3
+RETRY_DELAYS = (3, 10)
+_TRANSIENT = (
+    "connection aborted", "connectionreset", "10054", "timed out", "timeout",
+    "too many requests", "429", "502", "503", "504", "temporarily unavailable", "remote end closed",
+)
+
+
+def _is_transient(err: str) -> bool:
+    e = err.lower()
+    return any(t in e for t in _TRANSIENT)
+
+
 def _default_runner(args: list[str]) -> Any:
     argv = _resolve_command(args)
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=180)
-    if proc.returncode != 0:
-        raise CollectorError(f"{' '.join(args[:4])}... failed: {proc.stderr.strip()[:500]}")
+    label = " ".join(args[:4])
+    for attempt in range(1, RETRIES + 1):
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=300)
+        except subprocess.TimeoutExpired:
+            err = "timed out after 300 s"
+        else:
+            if proc.returncode == 0:
+                break
+            err = proc.stderr.strip()
+        if attempt < RETRIES and _is_transient(err):
+            _log(f"[retry] {label}... attempt {attempt} failed ({err[:80]}); retrying")
+            time.sleep(RETRY_DELAYS[attempt - 1])
+            continue
+        raise CollectorError(f"{label}... failed: {err[:500]}")
     out = proc.stdout.strip()
     return json.loads(out) if out else None
 
@@ -177,20 +203,32 @@ def collect_azure(
                 }
             )
 
+    # Role assignments: ONE call per subscription (not per identity), matched locally by principalId.
+    by_principal = {i["objectId"]: i for i in identities if i.get("objectId")}
     for ident in identities:
         ident["roleAssignments"] = []
-        if not ident.get("objectId"):
-            continue
+    warnings: list[str] = []
+    if by_principal:
         for sub in subs:
-            ras = run(
-                [
-                    "az", "role", "assignment", "list",
-                    "--assignee-object-id", ident["objectId"],
-                    "--all", "--include-inherited",
-                    "--subscription", sub, "-o", "json",
-                ]
-            ) or []
+            _log(f"[azure] role assignments in subscription {sub}")
+            try:
+                ras = run(
+                    [
+                        "az", "role", "assignment", "list",
+                        "--all", "--include-inherited",
+                        "--fill-principal-name", "false",
+                        "--subscription", sub, "-o", "json",
+                    ]
+                ) or []
+            except CollectorError as exc:
+                msg = f"role assignments for subscription {sub} skipped: {str(exc)[:200]}"
+                _log(f"[azure] warning: {msg}")
+                warnings.append(msg)
+                continue
             for ra in ras:
+                ident = by_principal.get(ra.get("principalId"))
+                if not ident:
+                    continue
                 entry = {"role": ra.get("roleDefinitionName"), "scope": ra.get("scope")}
                 if entry not in ident["roleAssignments"]:
                     ident["roleAssignments"].append(entry)
@@ -201,6 +239,7 @@ def collect_azure(
         "collectedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "subscriptions": subs,
         "identities": identities,
+        "warnings": warnings,
     }
 
 
