@@ -48,7 +48,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
     all_workflows = []
 
     if snapshot:
-        findings += run_identity_rules(snapshot, inventory, missing, renamed)
+        allowed = {o.strip() for o in args.allowed_owners.split(',') if o.strip()} if args.allowed_owners else None
+        findings += run_identity_rules(snapshot, inventory, missing, renamed, allowed)
 
     for repo_path in args.repo or []:
         workflows, errs = load_workflows(repo_path)
@@ -192,6 +193,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--format", choices=["text", "json", "sarif", "html"], default="text")
     s.add_argument("--output", "-o", help="write the report to a file")
     s.add_argument("--min-severity", default="info", choices=[x.label for x in Severity])
+    s.add_argument(
+        "--allowed-owners",
+        help="comma-separated GitHub orgs/users you trust; credentials for other owners are flagged (WIA010)",
+    )
     s.add_argument("--fail-on", choices=[x.label for x in Severity], help="exit 2 if a finding at this level or above exists")
     s.set_defaults(func=cmd_scan)
 

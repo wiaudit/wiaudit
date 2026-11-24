@@ -204,13 +204,77 @@ def check_identity(
                 )
 
 
+def _owner_of(subject: str) -> str | None:
+    parsed = parse_subject(subject)
+    if not parsed or "/" not in parsed.full_name:
+        return None
+    owner = parsed.full_name.split("/", 1)[0]
+    return None if any(c in owner for c in "*?") else owner
+
+
+def check_owners(
+    snapshot: AzureSnapshot,
+    inventory: dict[str, RepoInfo] | None = None,
+    allowed_owners: set[str] | None = None,
+) -> Iterable[Finding]:
+    """WIA010 / WIA011: which GitHub owners (orgs or personal accounts) can get tokens in this tenant."""
+    inventory = inventory or {}
+    allowed = {o.lower() for o in allowed_owners} if allowed_owners else None
+    counts: dict[str, int] = {}
+    for identity in snapshot.identities:
+        for fic in identity.federated_credentials:
+            if not fic.is_github:
+                continue
+            for subject in _subjects_of(fic):
+                owner = _owner_of(subject)
+                if not owner:
+                    continue
+                counts[owner] = counts.get(owner, 0) + 1
+                parsed = parse_subject(subject)
+                repo = inventory.get(parsed.full_name.lower()) if parsed else None
+                reason = None
+                if allowed is not None and owner.lower() not in allowed:
+                    reason = f"owner '{owner}' is not in your allowed GitHub owners"
+                elif repo and (repo.owner_type or "").lower() == "user":
+                    reason = f"'{owner}' is a personal GitHub account, not an organization"
+                if not reason:
+                    continue
+                yield Finding(
+                    rule_id="WIA010",
+                    severity=_privilege_bump(identity, Severity.MEDIUM),
+                    title="Trust to a GitHub repository outside your organizations",
+                    message=f"Credential '{fic.name}' trusts {parsed.full_name if parsed else subject}: {reason}. "
+                    "Personal and external accounts are outside your org's SSO, policies and offboarding; "
+                    f"whoever controls that repo can act as this identity ({_priv_text(identity)}).",
+                    remediation="Move the repository into your GitHub organization, or delete the credential. "
+                    "If the trust is intended, document it and add the owner to --allowed-owners.",
+                    target=f"{identity.ref} / credential '{fic.name}'",
+                    details={"owner": owner},
+                )
+    if allowed is None and len(counts) > 1:
+        listing = ", ".join(f"{o} ({n})" for o, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower())))
+        yield Finding(
+            rule_id="WIA011",
+            severity=Severity.INFO,
+            title="GitHub owners trusted in this tenant (review list)",
+            message=f"Federated credentials trust repositories from {len(counts)} GitHub owners: {listing}.",
+            remediation="Check that every owner is one of your organizations. Rerun with "
+            "--allowed-owners org1,org2 to flag the others (WIA010), and run `wiaudit collect github` "
+            "to detect personal accounts automatically.",
+            target="tenant",
+            details={"owners": counts},
+        )
+
+
 def run_identity_rules(
     snapshot: AzureSnapshot,
     inventory: dict[str, RepoInfo] | None = None,
     missing_repos: set[str] | None = None,
     renamed: dict[str, str] | None = None,
+    allowed_owners: set[str] | None = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     for ident in snapshot.identities:
         findings.extend(check_identity(ident, inventory, missing_repos, renamed))
+    findings.extend(check_owners(snapshot, inventory, allowed_owners))
     return findings

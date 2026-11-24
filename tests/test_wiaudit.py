@@ -389,3 +389,45 @@ def test_default_runner_does_not_retry_real_errors(monkeypatch):
     with pytest.raises(c.CollectorError):
         c._default_runner(["az", "role", "assignment", "list"])
     assert len(attempts) == 1
+
+
+def _snap_two_owners():
+    from wiaudit.models import AzureSnapshot, Identity
+
+    gh = "https://token.actions.githubusercontent.com"
+    return AzureSnapshot(
+        tenant_id="t",
+        identities=[
+            Identity(kind="app", display_name="a", client_id="1",
+                     federated_credentials=[FederatedCredential("x", gh, "repo:myorg/api:environment:prod")]),
+            Identity(kind="app", display_name="b", client_id="2",
+                     federated_credentials=[FederatedCredential("y", gh, "repo:someone/side-project:pull_request")]),
+        ],
+    )
+
+
+def test_owner_review_list_without_config():
+    fs = run_identity_rules(_snap_two_owners())
+    wia011 = [f for f in fs if f.rule_id == "WIA011"]
+    assert len(wia011) == 1 and "myorg (1)" in wia011[0].message and "someone (1)" in wia011[0].message
+    assert not [f for f in fs if f.rule_id == "WIA010"]
+
+
+def test_allowed_owners_flags_outsiders():
+    fs = run_identity_rules(_snap_two_owners(), allowed_owners={"MyOrg"})
+    wia010 = [f for f in fs if f.rule_id == "WIA010"]
+    assert len(wia010) == 1 and "someone/side-project" in wia010[0].message
+    assert not [f for f in fs if f.rule_id == "WIA011"]
+
+
+def test_personal_account_detected_from_inventory():
+    inv = {"someone/side-project": RepoInfo("someone/side-project", owner_type="User")}
+    fs = run_identity_rules(_snap_two_owners(), inventory=inv)
+    assert any(f.rule_id == "WIA010" and "personal GitHub account" in f.message for f in fs)
+
+
+def test_html_groups_low_findings_and_has_rule_table(snapshot, inventory):
+    html = render("html", run_identity_rules(snapshot, inventory), {"version": "t"})
+    assert "<table class='rules'>" in html and "<details class='grp'>" in html
+    text = render("text", run_identity_rules(snapshot, inventory), {"version": "t"})
+    assert "by rule: " in text

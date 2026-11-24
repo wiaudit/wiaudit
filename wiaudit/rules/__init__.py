@@ -11,6 +11,8 @@ RULES = {
     "WIA007": "Trust points to a renamed GitHub repository",
     "WIA008": "Identity close to the federated credential limit",
     "WIA009": "Federated credential from an unrecognized issuer",
+    "WIA010": "Trust to a GitHub repository outside your organizations",
+    "WIA011": "GitHub owners trusted in this tenant (review list)",
     # workflow side
     "WIA101": "pull_request_target workflow can request OIDC tokens",
     "WIA102": "id-token: write granted to every job in the workflow",

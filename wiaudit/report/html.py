@@ -5,9 +5,16 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
-from ..models import Finding
+from ..models import Finding, Severity
 
 _CSS = """
+table.rules{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:14px}
+table.rules th,table.rules td{text-align:left;padding:6px 8px;border-bottom:1px solid rgba(127,127,127,.25)}
+table.rules .n{text-align:right}
+details.grp{margin:10px 0}
+details.grp>summary{cursor:pointer;padding:8px 0;font-weight:600}
+details.grp .cnt{font-weight:400;opacity:.7}
+
 :root{--bg:#fafaf9;--fg:#1c1917;--muted:#78716c;--line:#e7e5e4;--card:#fff;
 --critical:#b91c1c;--high:#dc2626;--medium:#d97706;--low:#0e7490;--info:#78716c}
 @media (prefers-color-scheme:dark){:root{--bg:#1c1917;--fg:#f5f5f4;--muted:#a8a29e;--line:#44403c;--card:#292524}}
@@ -29,16 +36,40 @@ def render_html(findings: list[Finding], summary: dict[str, int], meta: dict[str
         f'<div class="tile" style="border-top:3px solid var(--{k})"><b>{v}</b><span>{k}</span></div>'
         for k, v in summary.items()
     )
-    items = []
-    for f in findings:
+    def card(f: Finding) -> str:
         sev = f.severity.label
         where = f"{f.location}:{f.line}" if f.location and f.line else f.target
-        items.append(
+        return (
             f'<div class="f" style="border-left-color:var(--{sev})">'
             f'<h3><span class="sev" style="color:var(--{sev})">{sev}</span>{escape(f.rule_id)} · {escape(f.title)}</h3>'
             f'<div class="where">{escape(where)}</div>'
             f"<p>{escape(f.message)}</p>"
             f'<div class="fix"><b>Fix:</b> {escape(f.remediation)}</div></div>'
+        )
+
+    rows = "".join(
+        f'<tr><td><span class="sev" style="color:var(--{sv})">{sv}</span></td><td>{escape(r)}</td>'
+        f"<td>{escape(t)}</td><td class='n'>{n}</td></tr>"
+        for r, sv, t, n in meta.get("byRule", [])
+    )
+    table = (
+        f"<table class='rules'><thead><tr><th>Severity</th><th>Rule</th><th>Finding</th><th class='n'>Count</th></tr>"
+        f"</thead><tbody>{rows}</tbody></table>"
+        if rows
+        else ""
+    )
+    important = [f for f in findings if f.severity >= Severity.MEDIUM]
+    minor = [f for f in findings if f.severity < Severity.MEDIUM]
+    items = [card(f) for f in important]
+    groups: dict[str, list[Finding]] = {}
+    for f in minor:
+        groups.setdefault(f.rule_id, []).append(f)
+    for rid, fs in groups.items():
+        items.append(
+            f"<details class='grp'><summary>{escape(rid)} · {escape(fs[0].title)} "
+            f"<span class='cnt'>({len(fs)} {fs[0].severity.label})</span></summary>"
+            + "".join(card(f) for f in fs)
+            + "</details>"
         )
     body = "".join(items) or "<p>No findings.</p>"
     meta_line = " · ".join(
@@ -57,5 +88,5 @@ def render_html(findings: list[Finding], summary: dict[str, int], meta: dict[str
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         f"<title>Workload identity audit</title><style>{_CSS}</style></head><body><main>"
         f"<h1>Workload identity audit</h1><div class='meta'>{meta_line}</div>"
-        f"<div class='tiles'>{tiles}</div>{body}</main></body></html>"
+        f"<div class='tiles'>{tiles}</div>{table}{body}</main></body></html>"
     )

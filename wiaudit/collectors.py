@@ -289,6 +289,7 @@ def collect_github(repos: list[str], run: Runner = _default_runner) -> list[dict
             {
                 "fullName": data.get("full_name", full),
                 "ownerId": (data.get("owner") or {}).get("id"),
+                "ownerType": (data.get("owner") or {}).get("type"),
                 "repoId": data.get("id"),
                 "createdAt": data.get("created_at"),
                 "usesImmutable": None,

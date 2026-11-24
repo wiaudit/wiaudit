@@ -21,6 +21,8 @@ def render_text(findings: list[Finding], summary: dict[str, int], meta: dict[str
     if meta.get("tenantId"):
         lines.append(f"tenant: {meta['tenantId']}  identities: {meta.get('identities', 0)}  workflows: {meta.get('workflows', 0)}")
     lines.append("summary: " + ", ".join(f"{k} {v}" for k, v in summary.items()))
+    if meta.get("byRule"):
+        lines.append("by rule: " + ", ".join(f"{r} x{n}" for r, _s, _t, n in meta["byRule"]))
     lines.append("")
     if not findings:
         lines.append("No findings.")

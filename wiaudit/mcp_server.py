@@ -43,6 +43,7 @@ def tool_scan(
     repo_slug: str | None = None,
     github_inventory: str | None = None,
     min_severity: str = "low",
+    allowed_owners: list[str] | None = None,
 ) -> dict[str, Any]:
     """Audit federated identity credentials and/or GitHub workflows. Returns findings with fixes."""
     findings = []
@@ -50,7 +51,7 @@ def tool_scan(
     snapshot = load_snapshot(azure_snapshot) if azure_snapshot else None
     inventory, missing, renamed = _inventory(github_inventory)
     if snapshot:
-        findings += run_identity_rules(snapshot, inventory, missing, renamed)
+        findings += run_identity_rules(snapshot, inventory, missing, renamed, set(allowed_owners) if allowed_owners else None)
     if repo_path:
         from .cli import _repo_info
 

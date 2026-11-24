@@ -40,7 +40,8 @@ wiaudit collect azure -o azure-snapshot.json                 # current subscript
 wiaudit collect github --from-azure azure-snapshot.json -o repos.json   # repo IDs, created date, deleted/renamed
 
 wiaudit scan --azure azure-snapshot.json --github repos.json \
-             --repo ./my-repo --format html -o report.html
+             --repo ./my-repo --format html -o report.html \
+             --allowed-owners my-org,my-other-org      # optional: flag every other owner
 
 cd my-repo && wiaudit doctor --azure ../azure-snapshot.json --github ../repos.json
 ```
@@ -71,7 +72,9 @@ applications (any member user can by default; `Application.Read.All` for service
 | WIA006 | critical | Trust to a GitHub repo that no longer exists (name can be re‑registered) |
 | WIA007 | critical | Trust to a repo's old name after a rename |
 | WIA008 | medium | Identity near the 20 federated credentials limit |
-| WIA009 | low | Credential from an unrecognised issuer |
+| WIA009 | low | Credential from an unrecognised issuer (`collect azure --all-issuers`) |
+| WIA010 | medium–critical | Trust to a repo outside your organizations: owner not in `--allowed-owners`, or a personal GitHub account |
+| WIA011 | info | Review list of all GitHub owners trusted in the tenant |
 | WIA101 | critical | `pull_request_target` workflow with `id-token: write` |
 | WIA102 | low | `id-token: write` granted at workflow level to several jobs |
 | WIA103 | medium | `azure/login` with a long‑lived `creds:` secret instead of OIDC |

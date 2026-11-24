@@ -103,6 +103,7 @@ def load_repo_inventory(path: str | Path) -> dict[str, RepoInfo]:
             repo_id=str(r["repoId"]) if r.get("repoId") is not None else None,
             created_at=r.get("createdAt"),
             uses_immutable=r.get("usesImmutable"),
+            owner_type=r.get("ownerType"),
         )
         out[info.full_name.lower()] = info
     return out

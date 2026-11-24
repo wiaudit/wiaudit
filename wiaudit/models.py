@@ -134,6 +134,7 @@ class RepoInfo:
     repo_id: str | None = None
     created_at: str | None = None  # ISO date
     uses_immutable: bool | None = None  # explicit opt-in / known state
+    owner_type: str | None = None  # "Organization" | "User" (from GitHub API)
 
     @property
     def owner(self) -> str:
