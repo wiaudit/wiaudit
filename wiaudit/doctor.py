@@ -112,16 +112,51 @@ def _hints(job: Job, repo: RepoInfo, expected_subjects: list[str], fics: list[Fe
     return hints
 
 
+def repo_ids_from_snapshot(snapshot: AzureSnapshot, repo: RepoInfo) -> tuple[RepoInfo, bool]:
+    """If the repo's IDs are unknown but a credential already uses the immutable subject for it
+    (repo:OWNER@OWNER_ID/REPO@REPO_ID:...), take the IDs from there. Returns (repo, inferred)."""
+    if repo.owner_id and repo.repo_id:
+        return repo, False
+    repo_l = repo.full_name.lower()
+    for ident in snapshot.identities:
+        for fic in ident.federated_credentials:
+            if not fic.is_github:
+                continue
+            for s in _fic_subjects(fic):
+                p = parse_subject(s)
+                if p and p.is_immutable and p.full_name.lower() == repo_l and p.owner_id and p.repo_id:
+                    if any(c in (p.owner_id + p.repo_id) for c in "*?"):
+                        continue
+                    return (
+                        RepoInfo(
+                            full_name=p.full_name,  # canonical casing as written in the credential
+                            owner_id=p.owner_id,
+                            repo_id=p.repo_id,
+                            created_at=repo.created_at,
+                            uses_immutable=repo.uses_immutable,
+                            owner_type=repo.owner_type,
+                        ),
+                        True,
+                    )
+    return repo, False
+
+
 def diagnose(
     workflows: list[Workflow], snapshot: AzureSnapshot, repo: RepoInfo
 ) -> tuple[list[JobDiagnosis], list[Finding]]:
     diagnoses: list[JobDiagnosis] = []
     findings: list[Finding] = []
+    repo, ids_inferred = repo_ids_from_snapshot(snapshot, repo)
+    seen: set[tuple[str, str, str | None]] = set()
     for wf in workflows:
         for job in wf.jobs:
             for ls in job.login_steps:
                 if not ls.uses_oidc:
                     continue
+                key = (wf.path, job.job_id, ls.client_id)
+                if key in seen:  # several azure/login steps with the same identity: one diagnosis
+                    continue
+                seen.add(key)
                 perm, _src = effective_id_token(wf, job)
                 idents, how = _candidate_identities(snapshot, ls.client_id, repo)
                 exp = expected_full_subjects(wf, job, repo)
@@ -171,6 +206,11 @@ def diagnose(
                     d.hints.extend(_hints(job, repo, d.unmatched, fics))
                     if d.status == "ok":
                         d.status = "partial" if d.matched else "no-match"
+
+                if ids_inferred and any("@" in m for m in d.matched):
+                    d.hints.append(
+                        "Repo IDs were taken from an existing immutable credential (no `wiaudit collect github` needed)."
+                    )
 
                 if (
                     d.status == "ok"

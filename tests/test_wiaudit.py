@@ -447,3 +447,27 @@ def test_allowed_owner_typo_is_reported():
     fs = run_identity_rules(_snap_two_owners(), allowed_owners={"ORG1"})
     hint = [f for f in fs if f.rule_id == "WIA011"]
     assert len(hint) == 1 and "ORG1" in hint[0].message and "myorg (1)" in hint[0].message
+
+
+def test_doctor_takes_repo_ids_from_immutable_credentials():
+    from wiaudit.models import AzureSnapshot, Identity
+
+    gh = "https://token.actions.githubusercontent.com"
+    snap = AzureSnapshot(
+        tenant_id="t",
+        identities=[
+            Identity(kind="managedIdentity", display_name="mi", client_id="c1",
+                     federated_credentials=[FederatedCredential("m", gh, "repo:Org@11/App@22:ref:refs/heads/main")]),
+        ],
+    )
+    wf = parse_workflow_text(
+        "on:\n  push:\n    branches: [main]\npermissions:\n  id-token: write\njobs:\n  build:\n    steps:\n"
+        "      - uses: azure/login@v2\n        with:\n          client-id: ${{ secrets.ID }}\n"
+        "      - uses: azure/login@v2\n        with:\n          client-id: ${{ secrets.ID }}\n",
+        "w.yml",
+    )
+    diags, findings = diagnose([wf], snap, RepoInfo("org/app"))
+    assert len(diags) == 1  # two login steps, one diagnosis
+    assert diags[0].status == "ok" and not findings
+    assert diags[0].matched == ["repo:Org@11/App@22:ref:refs/heads/main"]
+    assert any("immutable credential" in h for h in diags[0].hints)

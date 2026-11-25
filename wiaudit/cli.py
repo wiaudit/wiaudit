@@ -108,7 +108,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     bad = 0
     for d in diags:
         print(f"[{icon[d.status]}] {d.workflow} -> job '{d.job}'")
-        print(f"       identity: {d.identity or '-'}")
+        ids = (d.identity or "-").split(", ")
+        shown = ", ".join(ids[:2]) + (f" (+{len(ids) - 2} more)" if len(ids) > 2 else "")
+        print(f"       identity: {shown}")
         for s in d.matched:
             print(f"       accepted: {s}")
         for s in d.unmatched:
