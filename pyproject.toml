@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wiaudit"
-version = "0.1.7"
-description = "Workload Identity Auditor: finds risky OIDC trust between GitHub Actions and Azure, and explains why a workflow cannot get a token."
+version = "0.1.8"
+description = "Fix AADSTS700213 and audit GitHub Actions to Azure OIDC: finds risky federated credentials (workload identity federation) in Entra ID and explains why azure/login cannot get a token."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 dependencies = ["PyYAML>=6.0"]
-keywords = ["azure", "entra", "github-actions", "oidc", "workload-identity", "security", "mcp"]
+keywords = ["azure", "entra-id", "azure-ad", "github-actions", "azure-login", "oidc", "workload-identity-federation", "federated-credentials", "aadsts700213", "managed-identity", "devsecops", "security", "audit", "mcp"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
